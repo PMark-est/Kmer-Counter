@@ -1,4 +1,4 @@
-# Kmer-Counter is a tool for gathering data about bacteria
+# Kmer-Counter is a tool for analyzing bacteria genomes
 
 This is a tool to count the amount of times a k-mer appears across multiple fna/fasta files. It also keeps track of how many of the seen kmers are resistant or susceptible(to an antibiotic).
 
