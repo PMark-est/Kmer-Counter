@@ -20,7 +20,7 @@
 
 #define MAX_SIZE 64 // Biggest kmer in bits, 32-mer
 #define MB 1048576.0
-size_t kmerMax = 0;
+size_t kmerMax = 0; // number of kmer combinations(4^k)
 std::string deleteMetadata = "sed -i \'/>/d\' "; // sed -i '/>/d'
 std::string deleteEmptyLines = "sed -i \'/^$/d\' "; // sed -i '/^$/d'
 
@@ -227,6 +227,7 @@ void writeToFile(LinkedList **lists, size_t *listSizes, const size_t threadCount
     kmersFile.open("counts.csv");
     kmersFile << k << "-mer(convert to binary (2*k) to get nucleotides; 00=A,01=C,10=G,11=T),res,sus\n";
     auto *sortingTable = new LinkedList[fileAmount];
+    std::cout << "started writing\n";
     if (threadCount == 1){
         LinkedList *list = *lists;
         Node *tmp;
@@ -245,7 +246,6 @@ void writeToFile(LinkedList **lists, size_t *listSizes, const size_t threadCount
                 }
             }
         }
-        std::cout << "done sorting\n";
         int total = 0;
         for (int i = fileAmount-1; i > -1; i--) {
             Node *node = sortingTable[i].head;
@@ -257,7 +257,6 @@ void writeToFile(LinkedList **lists, size_t *listSizes, const size_t threadCount
             }
             total += p;
         }
-        std::cout << "writing done, " << total << "\n";
    }
     else{
         size_t tempSize;
@@ -279,7 +278,6 @@ void writeToFile(LinkedList **lists, size_t *listSizes, const size_t threadCount
         Node *tmp2;
         Node *prev;
         size_t index;
-        std::cout << "started writing\n";
         for (int i = 0; i < threadCount; i++) {
             for (int j = 0; j < listSizes[i]; j++) {
                 tmp = lists[i][j].head;
@@ -311,20 +309,29 @@ void writeToFile(LinkedList **lists, size_t *listSizes, const size_t threadCount
                             delete tmp2;
                         }
                     }
-                    kmersFile << tmp->data << ", " << tmp->resOccurences << "," << tmp->susOccurences << "\n";
-                    tmp = tmp->next;
-                    delete lists[i][j].head;
+                    tmp2 = tmp->next;
+                    sortingTable[tmp->resOccurences+tmp->susOccurences-1].push(tmp);
+                    tmp = tmp2;
+                    //delete lists[i][j].head;
+                    lists[i][j].head = nullptr;
                     lists[i][j].head = tmp;
                 }
             }
         }
+        for (int i = fileAmount-1; i > -1; i--) {
+            tmp = sortingTable[i].head;
+            while(tmp){
+                kmersFile << tmp->data << ", " << tmp->resOccurences << "," << tmp->susOccurences << "\n";
+                tmp = tmp->next;
+            }
+        }
     }
+    std::cout << "writing done\n";
     delete[] sortingTable;
     kmersFile.close();
 }
 
 // The fileSize may be bigger than the amount of kmers since the file has newlines (\n)
-//readFile(k, listSize, nodeCount, fileNr, isResistant, &kmer, buffer, *list);
 void readFile(const size_t k, const size_t fileSize, const size_t *listSize, size_t *nodeCount, size_t occupiedFile, bool isRes, char **kmer, char *nucleotides, LinkedList *list){
     size_t currentNucleotideIndex = 0;
     for (int i = 0; i < 2*k; i+=2, currentNucleotideIndex++){
@@ -416,17 +423,19 @@ HashTable* readMetadataToTable(){
     int phenotype;
     char val;
     int i;
-    int j = 0;
     while(std::getline(metadata, line)){
         std::stringstream ss(line);
-        i = 0;
-        phenotype = 0;
-        comma = 0;
+        i = 0; // keeps track of the index at which a character gets placed in the array when making the genome id
+        phenotype = 0; // Keeps track of how long the word for the phenotype is(resistant or susceptible)
+        // because of the string stream the quotation marks are kept, so they're "resistant" or "susceptible"
+        comma = 0; // Keeps track of how many commas have been seen
         while (ss >> val) {
+            // gets phenotype
             if(comma == 4){
                 phenotype++;
                 if (phenotype == 2 && val != 'S' && val != 'R') break;
             }
+            // gets genome id
             if (comma == 1){
                 if(val == '"') continue;
                 genomeID[i] = val;
@@ -444,73 +453,130 @@ HashTable* readMetadataToTable(){
                 }
             }
         }
-        j++;
     }
     delete[] genomeID;
     metadata.close();
     return resistanceTable;
 }
 
+std::string getPath(){
+    std::ifstream settingsFileI("settings.txt");
+    std::string path;
+    if (settingsFileI){
+        getline(settingsFileI, path);
+    } else{
+        std::cout << "no settings file found\nPlease enter the absolute path containing the fna files: ";
+        std::cin >> path; // /home/marko/Git/Bio/files/
+        std::ofstream settingsFileO("settings.txt");
+        settingsFileO << path;
+        settingsFileO.close();
+    }
+    settingsFileI.close();
+    return path;
+}
+
+
+
 int main(int argc, char* argv[]){
-    int k = 16;
-    kmerMax = static_cast<size_t>(std::pow(4, k));
+    std::string path = getPath();
+    unsigned int k;
     int threadCount;
     std::string bacterium;
-    if (argc > 1){
-        threadCount = std::stoi(argv[2]);
-    }else{
-        std::cout << "How many threads do you want to use? ";
-        std::cin >> threadCount;
-    }
-    std::cout << "Threads: " << threadCount << "\n";
-
-    // These have to be above the while loop or the program breaks.
-    auto **lists = new LinkedList *[threadCount];
-    auto *listSizes = new size_t[threadCount];
-    auto *nodeCounts = new size_t[threadCount];
-    auto *threads = new std::thread[threadCount];
-    auto *vectors = new std::vector<std::filesystem::directory_entry>[threadCount];
-    auto *resistances = new std::vector<bool>[threadCount];
+    const auto processor_count = std::thread::hardware_concurrency();
     if (argc > 1){
         bacterium = argv[1];
+        try{
+            threadCount = std::stoi(argv[2]);
+            std::string input;
+            if (threadCount > processor_count){
+                std::cout << "Can't select more than " << processor_count << " threads\n";
+                return 0;
+            }
+            else if (threadCount > 0.5 * processor_count){
+                std::cout << "****WARNING****\nYOU HAVE SELECTED " << threadCount << " THREADS TO MULTI-THREAD WITH\nARE YOU SURE YOU WANT TO CONTINUE(y/n)?: ";
+                std::cin >> input;
+                if (input != "Y" || input != "y"){
+                    std::cout << "\nABORTED\n";
+                    return 0;
+                }
+            }
+            k = std::stoi(argv[3]);
+        } catch (const std::exception& e){
+            std::cout << "didn't enter a number\n";
+            return 0;
+        }
     } else{
+        try{
+            std::string input;
+            std::cout << "How many threads do you want to use? You have " << processor_count << " threads to use: ";
+            std::cin >> input;
+            threadCount = std::stoi(input);
+            if (threadCount > processor_count){
+                std::cout << "Can't select more than " << processor_count << " threads\n";
+                return 0;
+            }
+            else if (threadCount > 0.5 * processor_count){
+                std::cout << threadCount << ", " << 0.5*threadCount << "\n";
+                std::cout << "****WARNING****\nYOU HAVE SELECTED " << threadCount << " THREADS TO MULTI-THREAD WITH\nARE YOU SURE YOU WANT TO CONTINUE(y/n)?: ";
+                std::cin >> input;
+                if (input != "Y" || input != "y"){
+                    std::cout << "\nABORTED\n";
+                    return 0;
+                }
+            }
+            std::cout << "What k value do you want(less than 32)? ";
+            std::cin >> input;
+            k = std::stoi(input);
+            if (k > 31){
+                std::cout << "k isn't less than 32!, K: " << k << "\n";
+            }
+        } catch (const std::exception& e){
+            std::cout << "didn't enter a number\n";
+            return 0;
+        }
         while(true){
-            std::cout << "To view what you're options are type \'h\'\n";
+            std::cout << "-----\nTo view your folders, type \'h\'\n";
             std::cout << "What bacterium would you like to analyze? ";
             std::cin >> bacterium;
             if(bacterium=="h" || bacterium=="H") {
-                for (const auto &entry: std::filesystem::directory_iterator(std::filesystem::path("/home/marko/Git/Bio/files/"))) {
-                    std::cout << entry << "\n";
+                for (const auto &entry: std::filesystem::directory_iterator(std::filesystem::path(path))) {
+                    std::cout << entry.path().filename().string() << "\n";
                 }
             } else
                 break;
         }
     }
+    kmerMax = static_cast<size_t>(std::pow(4, k));
+    auto **lists = new LinkedList *[threadCount]; // array of linked hash tables
+    auto *listSizes = new size_t[threadCount]; // sizes of the hash tables
+    auto *nodeCounts = new size_t[threadCount]; // stores how many elements are in a hash table
+    auto *threads = new std::thread[threadCount];
+    auto *files = new std::vector<std::filesystem::directory_entry>[threadCount]; // array of vectors that hold the file names for multi-threading
+    auto *resistances = new std::vector<bool>[threadCount]; // array of vectors that hold whether the file is resistant or susceptible
     int i = 0;
     int fileCount = 0;
-    std::string path = "/home/marko/Git/Bio/files/" + bacterium;
     auto table = readMetadataToTable();
     char *fileName;
-    std::string filename;
-    for (const auto &entry : std::filesystem::directory_iterator(path)){
+    std::string fileNameS;
+    for (const auto &entry : std::filesystem::directory_iterator(path + bacterium)){
         i %= threadCount;
 
-        filename = entry.path().filename().string();
-        fileName = copy(filename.c_str(), filename.length()-4);
-        char resistance = table->get(fileName, filename.length()-3);
+        fileNameS = entry.path().filename().string();
+        fileName = copy(fileNameS.c_str(), fileNameS.length()-4);
+        char resistance = table->get(fileName, fileNameS.length()-3);
         delete fileName;
         if(resistance == 'r') resistances[i].push_back(true);
         else if(resistance == 's') resistances[i].push_back(false);
         else continue;
 
-        vectors[i].push_back(entry);
+        files[i].push_back(entry);
         i++;
         fileCount++;
     }
     delete table;
     size_t fileSize;
     for (i = 0; i < threadCount; i++) {
-        std::ifstream genomeFile(vectors[i].back().path().string());
+        std::ifstream genomeFile(files[i].back().path().string());
         genomeFile.seekg(0, std::ios::end);
         fileSize = genomeFile.tellg();
         fileSize <<= 1;
@@ -518,12 +584,12 @@ int main(int argc, char* argv[]){
         listSizes[i] = fileSize;
         lists[i] = new LinkedList[fileSize];
         nodeCounts[i] = 0;
+
+        threads[i] = std::thread(readFiles, k, &listSizes[i], &nodeCounts[i], fileSize, files[i], resistances[i], &lists[i]);
     }
     for (i = 0; i < threadCount; i++)
-        threads[i] = std::thread(readFiles, k, &listSizes[i], &nodeCounts[i], (fileSize << 1), vectors[i], resistances[i], &lists[i]);
-
-    for (i = 0; i < threadCount; i++)
         threads[i].join();
+
     writeToFile(lists, listSizes, threadCount, k, fileCount);
     std::cout << "Finished\n";
     // free memory
@@ -534,7 +600,7 @@ int main(int argc, char* argv[]){
     delete[] listSizes;
     delete[] nodeCounts;
     delete[] threads;
-    delete[] vectors;
+    delete[] files;
     delete[] resistances;
     return 0;
 
