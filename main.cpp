@@ -572,7 +572,7 @@ int main(int argc, char* argv[]){
         else if(resistance == 's') resistances[i].push_back(false);
         else continue;
 
-        files[i].push_back(entry);
+        files[i].push_back(folder->path());
         i++;
         fileCount++;
         folder++;
