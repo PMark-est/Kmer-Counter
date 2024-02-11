@@ -406,7 +406,7 @@ void readFiles(const size_t k, size_t *listSize, size_t *nodeCount, const size_t
     delete[] buffer;
 }
 
-HashTable* readMetadataToTable(const std::string path){
+HashTable* readMetadataToTable(const std::string &path){
     std::ifstream metadata(path);
     int fileSize = 0;
     std::string line;
@@ -414,6 +414,8 @@ HashTable* readMetadataToTable(const std::string path){
         fileSize++;
     }
     fileSize <<= 1;
+    std::cout << fileSize << "\n";
+    std::cout << path << "\n";
     auto resistanceTable = new HashTable(fileSize);
     metadata.clear();
     metadata.seekg(0);
@@ -558,13 +560,12 @@ int main(int argc, char* argv[]){
     char *fileName;
     std::string fileNameS;
     path += bacterium;
-    auto folder = std::filesystem::directory_iterator(path);
-    auto table = readMetadataToTable(folder->path().filename().string());
-    folder++;
-    while (folder){
+    auto table = readMetadataToTable(path+"/meta.csv");
+    for (const auto &entry: std::filesystem::directory_iterator(path)){
+        if (entry.path().filename().string() == "meta.csv") continue;
         i %= threadCount;
 
-        fileNameS = folder->path().filename().string();
+        fileNameS = entry.path().filename().string();
         fileName = copy(fileNameS.c_str(), fileNameS.length()-4);
         char resistance = table->get(fileName, fileNameS.length()-3);
         delete fileName;
@@ -572,10 +573,9 @@ int main(int argc, char* argv[]){
         else if(resistance == 's') resistances[i].push_back(false);
         else continue;
 
-        files[i].push_back(folder->path());
+        files[i].push_back(entry);
         i++;
         fileCount++;
-        folder++;
     }
     delete table;
     size_t fileSize;
