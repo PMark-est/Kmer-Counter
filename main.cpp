@@ -401,7 +401,7 @@ void readFiles(const size_t k, size_t *listSize, size_t *nodeCount, const size_t
     // Calculate and display how long the file was read for
     auto stop = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start);
-    std::cout << duration.count() / 1000000.0 << " ms\n";
+    //std::cout << duration.count() / 1000000.0 << " ms\n";
     delete[] kmer;
     delete[] buffer;
 }
@@ -414,8 +414,6 @@ HashTable* readMetadataToTable(const std::string &path){
         fileSize++;
     }
     fileSize <<= 1;
-    std::cout << fileSize << "\n";
-    std::cout << path << "\n";
     auto resistanceTable = new HashTable(fileSize);
     metadata.clear();
     metadata.seekg(0);
