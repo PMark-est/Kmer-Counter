@@ -21,8 +21,6 @@
 #define MAX_SIZE 64 // Biggest kmer in bits, 32-mer
 #define MB 1048576.0
 size_t kmerMax = 0; // number of kmer combinations(4^k)
-std::string deleteMetadata = "sed -i \'/>/d\' "; // sed -i '/>/d'
-std::string deleteEmptyLines = "sed -i \'/^$/d\' "; // sed -i '/^$/d'
 
 size_t hash_c_string(const char* p, size_t size) {
     size_t result = 0;
@@ -98,8 +96,8 @@ public:
 
 class Node{
 public:
-    size_t resOccurences{};
-    size_t susOccurences{};
+    int resOccurences{};
+    int susOccurences{};
     size_t fileNr{};
     size_t data{};
     Node *next{};
@@ -310,7 +308,7 @@ void writeToFile(LinkedList **lists, size_t *listSizes, const size_t threadCount
                         }
                     }
                     tmp2 = tmp->next;
-                    sortingTable[tmp->resOccurences+tmp->susOccurences-1].push(tmp);
+                    sortingTable[abs(tmp->resOccurences - tmp->susOccurences)].push(tmp);
                     tmp = tmp2;
                     //delete lists[i][j].head;
                     lists[i][j].head = nullptr;
@@ -334,7 +332,7 @@ void writeToFile(LinkedList **lists, size_t *listSizes, const size_t threadCount
 // The fileSize may be bigger than the amount of kmers since the file has newlines (\n)
 void readFile(const size_t k, const size_t fileSize, const size_t *listSize, size_t *nodeCount, size_t occupiedFile, bool isRes, char **kmer, char *nucleotides, LinkedList *list){
     size_t currentNucleotideIndex = 0;
-    for (int i = 0; i < 2*k; i+=2, currentNucleotideIndex++){
+    for (int i = (k<<1); i > -1; i-=2, currentNucleotideIndex++){
         switch (*nucleotides) {
             case 'a': (*kmer)[i] = 48; (*kmer)[i+1] = 48; break;
             case 'c': (*kmer)[i] = 48; (*kmer)[i+1] = 49; break;
@@ -379,9 +377,6 @@ void readFiles(const size_t k, size_t *listSize, size_t *nodeCount, const size_t
     for (int i = 0; i < files.size(); ++i) {
         std::string fileName = files[i].path().string();
         bool isResistant = resistances[i];
-        // Remove useless lines from fna file. like lines that begin with >>> or empty lines
-        if (system((deleteMetadata + fileName).c_str()) || system((deleteEmptyLines + fileName).c_str()))
-            std::cout << "Removed lines from " << fileName << "\n";
         std::ifstream genomeFile(fileName);
 
         // Read how many bytes the file is
@@ -401,7 +396,7 @@ void readFiles(const size_t k, size_t *listSize, size_t *nodeCount, const size_t
     // Calculate and display how long the file was read for
     auto stop = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start);
-    //std::cout << duration.count() / 1000000.0 << " ms\n";
+    std::cout << duration.count() / 1000000.0 << " ms\n";
     delete[] kmer;
     delete[] buffer;
 }
@@ -459,32 +454,13 @@ HashTable* readMetadataToTable(const std::string &path){
     return resistanceTable;
 }
 
-std::string getPath(){
-    std::ifstream settingsFileI("settings.txt");
-    std::string path;
-    if (settingsFileI){
-        getline(settingsFileI, path);
-    } else{
-        std::cout << "no settings file found\nPlease enter the absolute path containing the fna files: ";
-        std::cin >> path; // /home/marko/Git/Bio/files/
-        std::ofstream settingsFileO("settings.txt");
-        settingsFileO << path;
-        settingsFileO.close();
-    }
-    settingsFileI.close();
-    return path;
-}
-
-
-
 int main(int argc, char* argv[]){
-    std::string path = getPath();
+    std::string folder;
     unsigned int k;
     int threadCount;
-    std::string bacterium;
     const auto processor_count = std::thread::hardware_concurrency();
     if (argc > 1){
-        bacterium = argv[1];
+        folder = argv[1];
         try{
             threadCount = std::stoi(argv[2]);
             std::string input;
@@ -519,7 +495,7 @@ int main(int argc, char* argv[]){
                 std::cout << threadCount << ", " << 0.5*threadCount << "\n";
                 std::cout << "****WARNING****\nYOU HAVE SELECTED " << threadCount << " THREADS TO MULTI-THREAD WITH\nARE YOU SURE YOU WANT TO CONTINUE(y/n)?: ";
                 std::cin >> input;
-                if (input != "Y" || input != "y"){
+                if (input == "N" || input == "n"){
                     std::cout << "\nABORTED\n";
                     return 0;
                 }
@@ -534,17 +510,10 @@ int main(int argc, char* argv[]){
             std::cout << "didn't enter a number\n";
             return 0;
         }
-        while(true){
-            std::cout << "-----\nTo view your folders, type \'h\'\n";
-            std::cout << "What bacterium would you like to analyze? ";
-            std::cin >> bacterium;
-            if(bacterium=="h" || bacterium=="H") {
-                for (const auto &entry: std::filesystem::directory_iterator(std::filesystem::path(path))) {
-                    std::cout << entry.path().filename().string() << "\n";
-                }
-            } else
-                break;
-        }
+        std::cin.ignore();
+        std::cout << "Enter absolute path of folder: ";
+        std::getline(std::cin, folder);
+        std::cout << folder << "\n";
     }
     kmerMax = static_cast<size_t>(std::pow(4, k));
     auto **lists = new LinkedList *[threadCount]; // array of linked hash tables
@@ -554,26 +523,31 @@ int main(int argc, char* argv[]){
     auto *files = new std::vector<std::filesystem::directory_entry>[threadCount]; // array of vectors that hold the file names for multi-threading
     auto *resistances = new std::vector<bool>[threadCount]; // array of vectors that hold whether the file is resistant or susceptible
     int i = 0;
-    int fileCount = 0;
     char *fileName;
     std::string fileNameS;
-    path += bacterium;
-    auto table = readMetadataToTable(path+"/meta.csv");
-    for (const auto &entry: std::filesystem::directory_iterator(path)){
-        if (entry.path().filename().string() == "meta.csv") continue;
-        i %= threadCount;
-
+    std::string metaFile = folder+"/meta.csv";
+    int resAmount = 0;
+    int susAmount = 0;
+    auto table = readMetadataToTable(metaFile);
+    for (const auto &entry: std::filesystem::directory_iterator(folder)){
         fileNameS = entry.path().filename().string();
+        if (fileNameS == "meta.csv" || fileNameS == "downloaded.csv") continue;
+        i %= threadCount;
         fileName = copy(fileNameS.c_str(), fileNameS.length()-4);
         char resistance = table->get(fileName, fileNameS.length()-3);
         delete fileName;
-        if(resistance == 'r') resistances[i].push_back(true);
-        else if(resistance == 's') resistances[i].push_back(false);
+        if(resistance == 'r'){
+            resistances[i].push_back(true);
+            resAmount++;
+        }
+        else if(resistance == 's'){
+            resistances[i].push_back(false);
+            susAmount++;
+        }
         else continue;
 
         files[i].push_back(entry);
         i++;
-        fileCount++;
     }
     delete table;
     size_t fileSize;
@@ -592,7 +566,7 @@ int main(int argc, char* argv[]){
     for (i = 0; i < threadCount; i++)
         threads[i].join();
 
-    writeToFile(lists, listSizes, threadCount, k, fileCount);
+    writeToFile(lists, listSizes, threadCount, k, std::max(resAmount, susAmount));
     std::cout << "Finished\n";
     // free memory
     for (int j = 0; j < threadCount; j++) {
