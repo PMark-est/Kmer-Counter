@@ -332,7 +332,7 @@ void writeToFile(LinkedList **lists, size_t *listSizes, const size_t threadCount
 // The fileSize may be bigger than the amount of kmers since the file has newlines (\n)
 void readFile(const size_t k, const size_t fileSize, const size_t *listSize, size_t *nodeCount, size_t occupiedFile, bool isRes, char **kmer, char *nucleotides, LinkedList *list){
     size_t currentNucleotideIndex = 0;
-    for (int i = (k<<1); i > -1; i-=2, currentNucleotideIndex++){
+    for (int i = 0; i < (k<<1); i+=2, currentNucleotideIndex++){
         switch (*nucleotides) {
             case 'a': (*kmer)[i] = 48; (*kmer)[i+1] = 48; break;
             case 'c': (*kmer)[i] = 48; (*kmer)[i+1] = 49; break;
