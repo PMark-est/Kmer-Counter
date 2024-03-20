@@ -472,7 +472,7 @@ int main(int argc, char* argv[]){
             else if (threadCount > 0.5 * processor_count){
                 std::cout << "****WARNING****\nYOU HAVE SELECTED " << threadCount << " THREADS TO MULTI-THREAD WITH\nARE YOU SURE YOU WANT TO CONTINUE(y/n)?: ";
                 std::cin >> input;
-                if (input != "Y" || input != "y"){
+                if (input != "Y" && input != "y"){
                     std::cout << "\nABORTED\n";
                     return 0;
                 }
@@ -496,7 +496,7 @@ int main(int argc, char* argv[]){
                 std::cout << threadCount << ", " << 0.5*threadCount << "\n";
                 std::cout << "****WARNING****\nYOU HAVE SELECTED " << threadCount << " THREADS TO MULTI-THREAD WITH\nARE YOU SURE YOU WANT TO CONTINUE(y/n)?: ";
                 std::cin >> input;
-                if (input == "N" || input == "n"){
+                if (input != "Y" && input != "y"){
                     std::cout << "\nABORTED\n";
                     return 0;
                 }
@@ -532,7 +532,7 @@ int main(int argc, char* argv[]){
     auto table = readMetadataToTable(metaFile);
     for (const auto &entry: std::filesystem::directory_iterator(folder)){
         fileNameS = entry.path().filename().string();
-        if (fileNameS == "meta.csv" || fileNameS == "downloaded.csv") continue;
+        if (fileNameS == "meta.csv" || fileNameS == "downloaded.csv" || fileNameS == "counts.csv") continue;
         i %= threadCount;
         fileName = copy(fileNameS.c_str(), fileNameS.length()-4);
         char resistance = table->get(fileName, fileNameS.length()-3);
