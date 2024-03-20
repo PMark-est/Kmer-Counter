@@ -191,6 +191,7 @@ public:
 
 size_t convertToDecimal(char **binary, size_t k){
     size_t decimalNumber = 0;
+    k = k<<1;
     auto pow = (size_t) std::pow(2, k-1);
     for (int i = 0; i < k; i++) {
         decimalNumber += ((*binary)[i] - 48) * pow;
@@ -239,7 +240,7 @@ void writeToFile(LinkedList **lists, size_t *listSizes, const size_t threadCount
                     list[i].head = nullptr;
                     tmpNext = tmp->next;
                     list[i].head = tmpNext;
-                    sortingTable[tmp->resOccurences + tmp->susOccurences - 1].push(tmp); // res + sus is always at least 1
+                    sortingTable[abs(tmp->resOccurences - tmp->susOccurences)].push(tmp); // res + sus is always at least 1
                     tmp = tmpNext;
                 }
             }
@@ -255,7 +256,7 @@ void writeToFile(LinkedList **lists, size_t *listSizes, const size_t threadCount
             }
             total += p;
         }
-   }
+    }
     else{
         size_t tempSize;
         LinkedList *tempListPtr;
